@@ -216,11 +216,13 @@ Now Lets see the original images v.s. noised images
 fig, axs = plt.subplots(2, 1, figsize=(12, 5))
 axs[0].set_title("Input data")
 axs[0].imshow(torchvision.utils.make_grid(x)[0], cmap="Greys")
+
 # Adding noise
 amount = torch.linspace(0, 1, x.shape[0])  # Left to right -> more corruption
 noised_x = add_noise(x, amount)
+
 # Plotting the noised version
 axs[1].set_title("Noised data (-- amount increases -->)")
 axs[1].imshow(torchvision.utils.make_grid(noised_x)[0], cmap="Greys")
 ```
-
+<img src=images/encoder-decoder/MNIST_OrigvsNoised.png >

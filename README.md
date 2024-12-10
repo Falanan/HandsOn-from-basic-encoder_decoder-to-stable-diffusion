@@ -60,17 +60,17 @@ for result in results:
     boxes = result.boxes
     for box in boxes:
         if box.cls == 0:  # Class ID for 'person' in COCO dataset
-            print(f"Detected a person at {box.xyxy.numpy()}")  # Bounding box coordinates
-            bbox = box.xyxy[0].numpy()
+            print(f"Detected a person at {box.xyxy.cpu().numpy()}")  # Bounding box coordinates
+            bbox = box.xyxy[0].cpu().numpy()
             bbox = [int(coord) for coord in bbox]
             cropped_image = image_rgb[bbox[1]:bbox[3], bbox[0]:bbox[2]]
-      
+            
             # Display the cropped image using matplotlib
             plt.imshow(cropped_image)
             plt.axis('off')  # Hide axis
             plt.title("Cropped Person")
             plt.show()
-      
+            
             # Save the cropped image if needed
             cropped_image_path = "cropped_person.jpg"
             cropped_image_bgr = cv2.cvtColor(cropped_image, cv2.COLOR_RGB2BGR)  # Convert back to BGR for saving
@@ -147,8 +147,7 @@ This function directly removes the noise we added directly.
 
 ### Remove the noise partially
 ```
-updated_amount = torch.where(amount >= 0.2, amount - 0.2, amount)
-denoised_img = denoise(noised_img, updated_amount, noise)
+denoised_img = denoise(noised_img, amount, noise)
 
 plt.figure(figsize=(30, 10))
 for i in range(0, 24):
@@ -163,7 +162,7 @@ for i in range(0, 24):
         plt.axis('off')
     else:
         plt.imshow(denoised_img[i-16])
-        plt.title("Denoised Image with amout" + str(round(updated_amount[i-16].item(), 2)), rotation=5)
+        plt.title("Denoised Image with amout" + str(round(amount[i-16].item(), 2)), rotation=5)
         plt.axis('off')
 ```
 Original v.s. Noised v.s. Partially noise removed
@@ -198,6 +197,7 @@ for i in range(batch_size):
 ```
 These are the images in MNIST dataset looks like:
 <img src=images/encoder-decoder/MNIST_imgs.png>
+
 Since from now we do not need to menorize the noises added to the image, then update the add_noise a little bit.
 
 Updated add_noise function:
@@ -226,3 +226,122 @@ axs[1].set_title("Noised data (-- amount increases -->)")
 axs[1].imshow(torchvision.utils.make_grid(noised_x)[0], cmap="Greys")
 ```
 <img src=images/encoder-decoder/MNIST_OrigvsNoised.png >
+
+### UNet
+UNet(U-Shaped Network) is a type of convolutional neural network (CNN) designed for image-to-image tasks.
+1. Encoder Path: Extracts and compresses information, similar to a traditional convolutional network.
+2. Decoder Path: Reconstructs the image back to its original resolution, often using upsampling techniques.
+3. The "skip connections" directly link encoder layers to decoder layers. They ensure that fine details from earlier layers are available at higher resolution during upsampling.
+
+This is how does the UNet looks like: [U-Net: Convolutional Networks for Biomedical Image Segmentation](https://arxiv.org/abs/1505.04597)
+<img src=images\encoder-decoder\Unet_Structure.png >
+
+Well, Since the images in our dataset is 32 * 32. So we need to modify the network parameters to make it capeable*************** for our dataset.
+
+```
+class CustomizedUNet(nn.Module):
+    def __init__(self, in_channels=1, out_channels=1):
+        super().__init__()
+        self.down_layers = torch.nn.ModuleList(
+            [
+                nn.Conv2d(in_channels, 32, kernel_size=5, padding=2),
+                nn.Conv2d(32, 64, kernel_size=5, padding=2),
+                nn.Conv2d(64, 128, kernel_size=5, padding=2),
+                nn.Conv2d(128, 128, kernel_size=5, padding=2),
+            ]
+        )
+        self.up_layers = torch.nn.ModuleList(
+            [
+                nn.Conv2d(128, 128, kernel_size=5, padding=2),
+                nn.Conv2d(128 + 128, 64, kernel_size=5, padding=2),  # Note: Add channel from skip connection
+                nn.Conv2d(64 + 64, 32, kernel_size=5, padding=2),    # Add channel from skip connection
+                nn.Conv2d(32 + 32, out_channels, kernel_size=5, padding=2),  # Add channel from skip connection
+            ]
+        )
+        self.act = nn.SiLU()  # The activation function
+        self.downscale = nn.MaxPool2d(2)
+        
+        # Use Upsample with align_corners=True
+        self.upscale = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+
+    def forward(self, x):
+        h = []  # Store skip connections
+        
+        # Down layers
+        for i, l in enumerate(self.down_layers):
+            x = self.act(l(x))  # Apply convolution + activation
+            if i < len(self.down_layers) - 1:  # For all but the last down layer
+                h.append(x)  # Store output for skip connection
+                x = self.downscale(x)  # Downscale for the next layer
+
+        # Up layers
+        for i, l in enumerate(self.up_layers):
+            if i > 0:  # For all except the first up layer
+                x = self.upscale(x)  # Upsample
+                # Ensure sizes are aligned for concatenation
+                if x.shape[2:] != h[-1].shape[2:]:
+                    x = torch.nn.functional.interpolate(x, size=h[-1].shape[2:], mode='bilinear', align_corners=True)
+                x = torch.cat([x, h.pop()], dim=1)  # Concatenate skip connection
+            x = self.act(l(x))  # Apply convolution + activation
+
+        return x
+```
+
+Now Let's train this network!
+```
+net = CustomizedUNet()
+x = torch.rand(8, 1, 28, 28)
+
+# Dataloader (you can mess with batch size)
+batch_size = 128
+train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+# How many runs through the data should we do?
+n_epochs = 4
+
+# Create the network
+net = CustomizedUNet()
+net.to(device)
+
+# Our loss function
+loss_fn = nn.MSELoss()
+
+# The optimizer
+opt = torch.optim.Adam(net.parameters(), lr=1e-3)
+
+# Keeping a record of the losses for later viewing
+losses = []
+
+# The training loop
+for epoch in range(n_epochs):
+
+    for x, y in train_dataloader:
+
+        # Get some data and prepare the corrupted version
+        x = x.to(device)  # Data on the GPU
+        noise_amount = torch.rand(x.shape[0]).to(device)  # Pick random noise amounts
+        noisy_x = add_noise(x, noise_amount)  # Create our noisy x
+
+        # Get the model prediction
+        pred = net(noisy_x)
+
+        # Calculate the loss
+        loss = loss_fn(pred, x)  # How close is the output to the true 'clean' x?
+
+        # Backprop and update the params:
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+
+        # Store the loss for later
+        losses.append(loss.item())
+
+    # Print our the average of the loss values for this epoch:
+    avg_loss = sum(losses[-len(train_dataloader) :]) / len(train_dataloader)
+    print(f"Finished epoch {epoch}. Average loss for this epoch: {avg_loss:05f}")
+
+# View the loss curve
+plt.plot(losses)
+plt.ylim(0, 0.1)
+```
+

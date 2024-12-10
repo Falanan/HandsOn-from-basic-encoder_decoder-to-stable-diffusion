@@ -3,3 +3,5 @@
 yolov8n.pt
 *.pth
 /stable_diffusion_finetuning
+*.pt
+generated_image.png

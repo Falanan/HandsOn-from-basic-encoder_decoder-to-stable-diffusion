@@ -2,3 +2,4 @@
 /mnist
 yolov8n.pt
 *.pth
+/stable_diffusion_finetuning

@@ -438,5 +438,158 @@ for i in range(n_steps):
 As we can see in the picture. When there is a lot of noise, the result of multi-step denoising will be clearer than the single denoised image. At the same time, we lose some of the information of the image, which makes our results not look as accurate as single-step denoising. But that's what generative AI wants!
 
 ### Scale up to Diffusion model scheduler(DDPM UNet2DModel)
+```
+model = UNet2DModel(
+    sample_size=28,  # the target image resolution
+    in_channels=1,  # the number of input channels, 3 for RGB images
+    out_channels=1,  # the number of output channels
+    layers_per_block=2,  # how many ResNet layers to use per UNet block
+    block_out_channels=(32, 64, 64),  # Roughly matching our basic unet example
+    down_block_types=(
+        "DownBlock2D",  # a regular ResNet downsampling block
+        "AttnDownBlock2D",  # a ResNet downsampling block with spatial self-attention
+        "AttnDownBlock2D",
+    ),
+    up_block_types=(
+        "AttnUpBlock2D",
+        "AttnUpBlock2D",  # a ResNet upsampling block with spatial self-attention
+        "UpBlock2D",  # a regular ResNet upsampling block
+    ),
+)
+# print(model)
+```
 
+As we increase the size of the network, training would takes more time, it is almost doubled.
+```
+# Dataloader (you can mess with batch size)
+batch_size = 128
+train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
+# How many runs through the data should we do?
+n_epochs = 3
+
+# Create the network
+net = UNet2DModel(
+    sample_size=28,  # the target image resolution
+    in_channels=1,  # the number of input channels, 3 for RGB images
+    out_channels=1,  # the number of output channels
+    layers_per_block=2,  # how many ResNet layers to use per UNet block
+    block_out_channels=(32, 64, 64),  # Roughly matching our basic unet example
+    down_block_types=(
+        "DownBlock2D",  # a regular ResNet downsampling block
+        "AttnDownBlock2D",  # a ResNet downsampling block with spatial self-attention
+        "AttnDownBlock2D",
+    ),
+    up_block_types=(
+        "AttnUpBlock2D",
+        "AttnUpBlock2D",  # a ResNet upsampling block with spatial self-attention
+        "UpBlock2D",  # a regular ResNet upsampling block
+    ),
+)  # <<<
+net.to(device)
+
+# Our loss finction
+loss_fn = nn.MSELoss()
+
+# The optimizer
+opt = torch.optim.Adam(net.parameters(), lr=1e-3)
+
+# Keeping a record of the losses for later viewing
+losses = []
+
+# The training loop
+for epoch in range(n_epochs):
+
+    for x, y in train_dataloader:
+
+        # Get some data and prepare the corrupted version
+        x = x.to(device)  # Data on the GPU
+        noise_amount = torch.rand(x.shape[0]).to(device)  # Pick random noise amounts
+        noisy_x = add_noise(x, noise_amount)  # Create our noisy x
+
+        # Get the model prediction
+        pred = net(noisy_x, 0).sample  # <<< Using timestep 0 always, adding .sample
+
+        # Calculate the loss
+        loss = loss_fn(pred, x)  # How close is the output to the true 'clean' x?
+
+        # Backprop and update the params:
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+
+        # Store the loss for later
+        losses.append(loss.item())
+
+    # Print our the average of the loss values for this epoch:
+    avg_loss = sum(losses[-len(train_dataloader) :]) / len(train_dataloader)
+    print(f"Finished epoch {epoch}. Average loss for this epoch: {avg_loss:05f}")
+
+# Plot the Loss
+plt.plot(losses)
+plt.ylim(0, 0.1)
+plt.title("Loss over time")
+```
+
+Now Let's see the result
+
+<img src=images/encoder-decoder/MNIST_Unet2D.png >
+
+It seems much better than our BasicUNet, except the one with 100% noise added. We can have a way better result.
+
+Now Let's do the same thing. Remove noise partially in each step:
+```
+n_steps = 50  # Increased to have more steps for 10-step history saving
+amount = torch.full((x.shape[0],), 0.8)
+noised_x = add_noise(x, amount)
+step_history = [noised_x.detach().cpu()]
+pred_output_history = []
+
+for i in range(n_steps):
+    with torch.no_grad():  # No need to track gradients during inference
+        pred = net(noised_x.to(device), 0)  # Predict the denoised x0
+
+    mix_factor = 1 / (n_steps - i)  # How much we move towards the prediction
+    noised_x = noised_x * (1 - mix_factor) + pred.sample.cpu() * mix_factor  # Move part of the way there
+
+    # Store history every 10 steps (including the last step)
+    if i % 10 == 0 or i == n_steps - 1:
+        step_history.append(noised_x.detach().cpu())  # Store step for plotting
+        pred_output_history.append(pred.sample.cpu())  # Store model output for plotting
+pred_output_history.append(pred.sample.cpu())
+# Update the visualization to match the new history recording logic
+n_rows = len(step_history)  # Number of rows corresponds to how many times we saved history
+fig, axs = plt.subplots(n_rows, 2, figsize=(9, 4), sharex=True)
+axs[0, 0].set_title("x (model input)")
+axs[0, 1].set_title("model prediction")
+
+for i in range(n_rows):
+    axs[i, 0].imshow(torchvision.utils.make_grid(step_history[i])[0].clip(0, 1), cmap="Greys")
+    axs[i, 1].imshow(torchvision.utils.make_grid(pred_output_history[i])[0].clip(0, 1), cmap="Greys")
+```
+<img src=images/encoder-decoder/MNIST_Unet2D_steps.png >
+
+It looks like the same as our defined BasicUnet. We lose some of the details, but the results are still pretty closed and we also can see there are While we can still discern the number, a new style has been created. This is what generative AI is all about.
+
+Finally, If we go back to the math equation: 
+$$x_t = \sqrt{\alpha_t} \, x_0 + \sqrt{1 - \alpha_t} \, \epsilon$$
+If we plot the coefficients of the original image and noise.
+```
+noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
+plt.plot(noise_scheduler.alphas_cumprod.cpu() ** 0.5, label=r"${\sqrt{\bar{\alpha}_t}}$")
+plt.plot((1 - noise_scheduler.alphas_cumprod.cpu()) ** 0.5, label=r"$\sqrt{(1 - \bar{\alpha}_t)}$")
+plt.legend(fontsize="x-large")
+```
+
+<img src=images/encoder-decoder/Unet2D_amount.png >
+
+We can clearly see that as the number of training steps increases, there is less and less information in the original photo, as well as more and more noise added into the photo.
+
+## From Diffusion to Guidance Diffusion
+### Learning is very difficult, but cats save the day.
+Let's use pretrained cat generation diffusion model to demostrate this part.
+
+```
+image_pipe = DDPMPipeline.from_pretrained("google/ddpm-cat-256")
+image_pipe.to(device)
+```

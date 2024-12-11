@@ -12,6 +12,37 @@ A bit too far off topic, the Diffusion model isn't actually that amazing. In fac
 
 <img src=images/encoder-decoder/Diffusion_Model_Architechure.jpg  width="100%">
 
+As we can see from this picture, the Diffusion model starts with a picture that is completely full of noise, and through a series of operations, ends up with less and less noise until it outputs a complete picture.
+
+Math is always boring, but let's look at the basics of the Diffusion Model first. The following picture is from [Denoising Diffusion Probabilistic Models](https://arxiv.org/abs/2006.11239) paper. It looks very CREAZY! Don't panic, Let's see what are they doing.
+
+<img src= images/encoder-decoder/T-S.png>
+
+### Training
+1. We are using a loop to add different amount of noize to your image
+2. x0 means the original image
+3. We are going to add the noise to the original image based on different timestep(T). For example, (1-100), We will start by adding only 1% noise all the way up to adding 100% noise. 100% noise means you will lose all your original data in your image.
+4. Sample a Gaussian distribution noise(e).
+5. What does (x_t = \sqrt{\alpha_t} \, x_0 + \sqrt{1 - \alpha_t} \,\epsilon) do? This function will do a weigited sum between original image(x0) and noise(e). By doing this, you can get a image with noise added.
+$$x_t = \sqrt{\alpha_t} \, x_0 + \sqrt{1 - \alpha_t} \, \epsilon$$
+6. Keep doing the loop thll the end of the loop.
+
+<img src=images/encoder-decoder/x0t.png >
+
+Image from [Hung-Yi Lee: Machine Learning 2023 Spring](https://speech.ee.ntu.edu.tw/~hylee/ml/2023-spring.php)
+
+### Sampling (Inferencing)
+1. Sample a Gaussian Distribution noise. This image is complete noised, at least from our human eyes, we can not tell if there is any objct.
+2. Run T iterations in total.
+3. The e in this equation means the predicted noise, xt means the image input from the previous step. In the equation, we are going to minus the predicted noise from the previous image. After that, as you can see ,we need to add z(New noise) to the image. Why do we need to add a new noise? We already predict the noise, isn't it great that we're predicting step by step like this? Actually NOT!!! In generative AI, we not always select the best result. If we keep choosing the best result, then the model will do some repetitive and useless work. Just like in LLM, if we keep choosing the token with the highest chance, the output of said LLM looks good though. But in reality it will just keep repeating the same point with nonsense. It's like getting stuck in a local optimal solution. So at each execution, we have to add some more bias. The new noise we added into the image is the bias.
+4. Keep looping till the end.
+5. Return the result
+
+<img src =images/encoder-decoder/S_I.png >
+
+Image from [Hung-Yi Lee: Machine Learning 2023 Spring](https://speech.ee.ntu.edu.tw/~hylee/ml/2023-spring.php)
+
+
 Does this sound familiar? It seems like this is the architecture of the encoder and decoder! Still, they are slightly different. Let's start with the encoder-decoder architecture and expand to the Diffusion Model, and finally to the now very popular model: Stable Diffusion.
 
 ## 2. Encoder-Decoder architechure for learning noise
@@ -134,7 +165,9 @@ Original image v.s. Noised image
 As we can see from the picture, the noise gets progressively louder from left to right until you can't see what's in the picture at all.
 
 ## Denoise
-Actually, the denoising example here isn't very robust, it's just for presentation purposes. Because the Diffusion model predicts noise, the output is a completely noise-removed image. But for ease of understanding at this stage, I'm going to go straight to the noise we generated here and remove only a portion of the noise at each step. The rest of the noise is actually equivalent to us taking the denoised photo and adding noise based on the state of this STEP.
+
+The process of denoising is actually to completely predict the noise in the image and add a bias. here for the sake of demonstration, in the process of denoising, I will only remove a portion of the noise, so that a small portion of the noise remains inside the image. In this case, there is still a small amount of noise left in the image, which is equivalent to adding biased noise.
+
 ```
 def denoise(corrupted_x, amount, noise):
     """Reconstruct the original input `x` from the corrupted version"""
@@ -147,7 +180,8 @@ This function directly removes the noise we added directly.
 
 ### Remove the noise partially
 ```
-denoised_img = denoise(noised_img, amount, noise)
+updated_amount = torch.where(amount >= 0.2, amount - 0.2, amount)
+denoised_img = denoise(noised_img, updated_amount, noise)
 
 plt.figure(figsize=(30, 10))
 for i in range(0, 24):
@@ -162,7 +196,7 @@ for i in range(0, 24):
         plt.axis('off')
     else:
         plt.imshow(denoised_img[i-16])
-        plt.title("Denoised Image with amout" + str(round(amount[i-16].item(), 2)), rotation=5)
+        plt.title("Denoised Image with amout" + str(round(updated_amount[i-16].item(), 2)), rotation=5)
         plt.axis('off')
 ```
 Original v.s. Noised v.s. Partially noise removed
@@ -236,7 +270,7 @@ UNet(U-Shaped Network) is a type of convolutional neural network (CNN) designed 
 This is how does the UNet looks like: [U-Net: Convolutional Networks for Biomedical Image Segmentation](https://arxiv.org/abs/1505.04597)
 <img src=images\encoder-decoder\Unet_Structure.png >
 
-Well, Since the images in our dataset is 32 * 32. So we need to modify the network parameters to make it capeable*************** for our dataset.
+Well, Since the images in our dataset is 32 * 32. So we need to modify the network parameters to make it capable for our dataset.
 
 ```
 class CustomizedUNet(nn.Module):
@@ -344,4 +378,65 @@ for epoch in range(n_epochs):
 plt.plot(losses)
 plt.ylim(0, 0.1)
 ```
+
+Get some images from the dataset and add noise to it, then through the noised data into the network that we just trained. Let's see the result!
+
+```
+x, y = next(iter(train_dataloader))
+x = x[:8]  # Only using the first 8 for easy plotting
+
+# Corrupt with a range of amounts
+amount = torch.linspace(0, 1, x.shape[0])  # Left to right -> more corruption
+# amount = torch.full((x.shape[0],), 0.9)
+noised_x = add_noise(x, amount)
+
+# Get the model predictions
+with torch.no_grad():
+    preds = net(noised_x.to(device)).detach().cpu()
+
+# Plot
+fig, axs = plt.subplots(3, 1, figsize=(12, 7))
+axs[0].set_title("Input data")
+axs[0].imshow(torchvision.utils.make_grid(x)[0].clip(0, 1), cmap="Greys")
+axs[1].set_title("Corrupted data")
+axs[1].imshow(torchvision.utils.make_grid(noised_x)[0].clip(0, 1), cmap="Greys")
+axs[2].set_title("Network Predictions")
+axs[2].imshow(torchvision.utils.make_grid(preds)[0].clip(0, 1), cmap="Greys")
+```
+
+<img src=images/encoder-decoder/MNIST_BasicUnet.png >
+
+Yeeeee! We successfully recover the images to human readable level except the last image. Since we add 100% noise to the last image, that is the reason we are seeing the recovered image seems nothing like the original image.
+
+But, we are remove the noise entirely just in one step. Don't forget that the Diffusion model actually adds another bias after removing the noise at each step. here we change the inference steps a little bit. At each step of the inference process, only a small portion of the noise is subtracted, leaving a portion of the noise in there for the model to make the next inference. Let's see what the difference is.
+
+```
+n_steps = 5
+amount = amount = torch.full((x.shape[0],), 0.9)
+noised_x = add_noise(x, amount)
+step_history = [noised_x.detach().cpu()]
+pred_output_history = []
+
+for i in range(n_steps):
+    with torch.no_grad():  # No need to track gradients during inference
+        pred = net(noised_x.to(device))  # Predict the denoised x0
+    pred_output_history.append(pred.detach().cpu())  # Store model output for plotting
+    mix_factor = 1 / (n_steps - i)  # How much we move towards the prediction
+    noised_x = noised_x * (1 - mix_factor) + pred.cpu() * mix_factor  # Move part of the way there
+    step_history.append(noised_x.detach().cpu())  # Store step for plotting
+
+fig, axs = plt.subplots(n_steps, 2, figsize=(9, 4), sharex=True)
+axs[0, 0].set_title("x (model input)")
+axs[0, 1].set_title("model prediction")
+for i in range(n_steps):
+    axs[i, 0].imshow(torchvision.utils.make_grid(step_history[i])[0].clip(0, 1), cmap="Greys")
+    axs[i, 1].imshow(torchvision.utils.make_grid(pred_output_history[i])[0].clip(0, 1), cmap="Greys")
+```
+
+<img src=images/encoder-decoder/MNIST_Basic_UNet_5steps.png >
+
+As we can see in the picture. When there is a lot of noise, the result of multi-step denoising will be clearer than the single denoised image. At the same time, we lose some of the information of the image, which makes our results not look as accurate as single-step denoising. But that's what generative AI wants!
+
+### Scale up to Diffusion model scheduler(DDPM UNet2DModel)
+
 

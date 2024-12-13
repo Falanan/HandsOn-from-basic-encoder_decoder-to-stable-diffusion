@@ -621,12 +621,13 @@ plt.show()
 Result: 
 <img src=images/Diff2GuidDiff/1000steps.png >
 
+It seems the first 2 images are fine. Expecially the first image, we can see this model generated a very good cat image. But the last 2 images seems not soo good, anyway, we can still see there is a cat in the image.
 
+The default inference steps of this model is 1000. It takes around 40s to generate one image on 2080Ti. Since we can adjust the inference steps, I really want to save my precious time. Let's try 400 inference steps.
 
+<img src=images\Diff2GuidDiff\400steps.png >
 
-
-
-
+These images look still fine, but the quality compired with 1000 inference steps definitely worser. Because that is the feature of DDPM pipeline. DDPMPipeline use UNet to denoise images, and requires 1000 steps to generate high quality images.
 
 Now Lets see what does Scheduler do during the generation process. Here we will replace the original scheduler (DDPMScheduler) to DDIMScheduler.
 

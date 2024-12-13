@@ -7,3 +7,7 @@ yolov8n.pt
 generated_image.png
 *.DS_Store
 /Diffusion_Course
+/OpenAI_Guided_Diffusion
+/guided_diffusion
+.DS_Store
+images/.DS_Store

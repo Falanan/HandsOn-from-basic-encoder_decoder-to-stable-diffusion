@@ -942,7 +942,7 @@ In function ```def color_loss(images, target_color=(0.0, 0.0, 0.0))```
 1. This function receives 2 parameters. ```images``` is the images tensor in ```[Batch_size, C, H, W]``` order, then ```target_color``` is the desiered color in ```[R, G, B]``` order.
 2. Mapping the target color to the range (-1, 1). We map the color range to (-1, 1) because the diffusion model uses this range. This is common in UNet models. We use this range in the diffusion model because the center point is 0. This makes gradient mode effective and stable. The calculation method as following:
 
-$$\text{target} = \text{target-color} \times 2 - 1$$
+$$\text{target} = \text{target\_color} \times 2 - 1$$
 
 3. Reshaping the target to match the shape of input image tensor for futher loss calculation.
 4. Loss calculation. This step calculates the absolute difference between each pixel and the desired color. Then use the absolute mean as the global loss.

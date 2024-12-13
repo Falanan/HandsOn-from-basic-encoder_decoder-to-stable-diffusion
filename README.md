@@ -967,7 +967,7 @@ This image is toooooooo dark, now lets downgrade the guidance scale. ```guidance
 
 <img src=images/Diff2GuidDiff/Black_Imgs_30_Scale.png >
 
-These images generated look way better. There's a white cat on a black background, and a black cat too.
+These images generated look better. There's a white cat on a black background, and a black cat too.
 
 ### Guidance using CLIP
 
@@ -1104,15 +1104,3 @@ Here are human understandable texts for inference steps:
 
 <img src=images/Diff2GuidDiff/CatOnGrass.png >
 Since here I'm using a baby model, I believe the results are quite good.
-
-And the following image is about the predection to the content in the image from OpenAI, further reading: [CLIP: Connecting text and images](https://openai.com/index/clip/)
-
-<img src=images/Diff2GuidDiff/CLIP_Prediction.png>
-
-## Classifier Based Guidance v.s. Classifier Free Guidance. Pros, Cons & Challenges
-
-I believe that by this point we understand the Diffusion model, so it's time to talk about the Classifier Based Guidance and Classifier Free Guidance.
-
-### What is the difference between these two?
-Classifier Based Diffusion Guidance requires a seperate classifier to steer the diffusion model's output toward a certain class.
-

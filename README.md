@@ -1104,3 +1104,20 @@ Here are human understandable texts for inference steps:
 
 <img src=images/Diff2GuidDiff/CatOnGrass.png >
 Since here I'm using a baby model, I believe the results are quite good.
+
+And the following image is about the predection to the content in the image from OpenAI, further reading: [CLIP: Connecting text and images](https://openai.com/index/clip/)
+
+<img src=images/Diff2GuidDiff/CLIP_Prediction.png >
+
+## Classifier Based Guidance v.s. Classifier Free Guidance. Pros, Cons & Challenges
+
+I believe that by this point we understand the Diffusion model, so it's time to talk about the Classifier Based Guidance and Classifier Free Guidance.
+
+### What are the differences between these two?
+Classifier Free Diffusion Models don't need an external model, which is classifier to steer the diffusion model's output toward a certain class. All above examples are Classifier free diffusion model. As you can see, the pretrained cat generation model can generate cat images without any guidance. This is because Classifier free model already involves incorporating conditioning information (like class labels) directly into the diffusion model itself so that it can generate images of a specific class without needing a separate classifier.
+
+During training, the model is exposed to pairs of (input, condition). For example, in a text-to-image scenario, the condition is a text prompt. In a class-conditional scenario, the condition would be a class label.
+
+Some fraction of the time, the condition is intentionally replaced with a “null” or empty condition (like an empty string for text or a special null token for a class label). This trains the model to also produce outputs without any conditioning.
+
+Text-to-Image Stable diffusion is a very typical Classifier Free model.

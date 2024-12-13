@@ -586,10 +586,264 @@ plt.legend(fontsize="x-large")
 We can clearly see that as the number of training steps increases, there is less and less information in the original photo, as well as more and more noise added into the photo.
 
 ## From Diffusion to Guidance Diffusion
-### Learning is very difficult, but cats save the day.
+
+#### Learning is very difficult, but cats save the day.
+
+### Use pretrained diffusion model
 Let's use pretrained cat generation diffusion model to demostrate this part.
 
 ```
 image_pipe = DDPMPipeline.from_pretrained("google/ddpm-cat-256")
 image_pipe.to(device)
 ```
+Lets use pretrained cat generation Diffusion Model to generate 4 cat images.
+
+```
+cat_image_list = []
+for i in range(0, 4):
+    images = image_pipe().images
+    cat_image_list.append(images[0])
+
+n_images = len(cat_image_list)
+
+# Create a figure with 1 row and `n_images` columns
+fig, axs = plt.subplots(1, n_images, figsize=(20, 5))  # Width 20, Height 5
+
+# Loop through the images and plot them in one row
+for idx, image in enumerate(cat_image_list):
+    axs[idx].imshow(image)  # Display the image
+    axs[idx].axis('off')    # Remove axis for cleaner display
+
+# Display the plots
+plt.tight_layout()
+plt.show()
+```
+Result: 
+<img src=images/Diff2GuidDiff/1000steps.png >
+
+
+
+
+
+
+
+
+Now Lets see what does Scheduler do during the generation process. Here we will replace the original scheduler (DDPMScheduler) to DDIMScheduler.
+
+DDIMScheduler is a more efficient scheduler used in diffusion networks. It can use a significantly reduced number of inference steps to generate images of comparable quality. Furthermore, the intermediate steps, inputs, and outputs can be obtained, which provides valuable insights into the network's behavior.
+
+Here is the paper: [Denoising Diffusion Implicit Models](https://arxiv.org/abs/2010.02502)
+
+```
+# Replace the default scheduler with DDIMScheduler (if you want DDIM behavior)
+scheduler = DDIMScheduler.from_pretrained("google/ddpm-cat-256")
+num_inference_steps = 400
+scheduler.set_timesteps(num_inference_steps=num_inference_steps)
+image_pipe.scheduler = scheduler
+
+# Random starting point (batch of 4 images, 3 channels, 256x256 resolution)
+x = torch.randn(4, 3, 256, 256).to(device)  # Batch of 4, 3-channel 256x256 px images
+
+# Loop through the sampling timesteps
+for i, t in tqdm(enumerate(image_pipe.scheduler.timesteps)):
+    # Prepare model input
+    model_input = image_pipe.scheduler.scale_model_input(x, t)
+    # Get the prediction from the UNet (predict the noise)
+    with torch.no_grad():
+        noise_pred = image_pipe.unet(model_input, t)["sample"]
+    # Calculate what the updated sample should look like using the scheduler
+    scheduler_output = image_pipe.scheduler.step(noise_pred, t, x)
+    # Update x for the next iteration
+    x = scheduler_output.prev_sample
+    # Occasionally display the intermediate results
+    if i % 10 == 0 or i == len(image_pipe.scheduler.timesteps) - 1:
+        fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+        # Display the current `x` (partially denoised image)
+        grid = torchvision.utils.make_grid(x, nrow=4).permute(1, 2, 0)
+        axs[0].imshow(grid.cpu().clip(-1, 1) * 0.5 + 0.5)  # Clip and normalize image for display
+        axs[0].set_title(f"Current x (step {i})")
+        # Display the predicted "clean" image (denoised image)
+        pred_x0 = scheduler_output.pred_original_sample  # Original prediction from the scheduler
+        if pred_x0 is not None:  # Not all schedulers support pred_original_sample
+            grid = torchvision.utils.make_grid(pred_x0, nrow=4).permute(1, 2, 0)
+            axs[1].imshow(grid.cpu().clip(-1, 1) * 0.5 + 0.5)
+            axs[1].set_title(f"Predicted denoised images (step {i})")
+        else:
+            axs[1].set_title(f"Predicted denoised images (unavailable)")
+        plt.show()
+```
+
+Well, let's set the inference steps to 400 and observe the results during the inference steps.
+
+0 step(Initial step):
+<img src=images/Diff2GuidDiff/intermediate_0.png >
+
+100 steps: 
+<img src=images/Diff2GuidDiff/intermediate_100.png >
+
+200 steps:
+<img src=images/Diff2GuidDiff/intermediate_200.png >
+
+300 steps:
+<img src=images/Diff2GuidDiff/intermediate_300.png >
+
+400 steps:
+<img src=images/Diff2GuidDiff/intermediate_400.png >
+
+The last image shows how adding random noise to an image affects the result of the inference. The 4th image in 100 steps shows a big cat face, but as the inference steps continue, the big cat face turns into the cat body.
+
+Now Lets switch back to default scheduler(DDPMScheduler) and try to fine tuning the network.
+```
+scheduler = DDIMScheduler.from_pretrained("google/ddpm-cat-256")
+scheduler.set_timesteps(num_inference_steps=1000)
+image_pipe.scheduler = scheduler
+```
+
+I'm really excited to see if this network can be tuned to generate some dog images! Why not just give it a try? Here I'll fine-tune the cat generation diffusion model on [Stanford Dogs dataset](https://huggingface.co/datasets/Voxel51/StanfordDogs).
+
+Prepare the dataset: 
+```
+# Load the entire Stanford Dogs dataset (both train and test splits)
+dataset_name = "voxel51/stanford_dogs"
+dataset = load_dataset(dataset_name)
+
+# Combine train and test splits into one dataset if needed
+train_dataset = dataset['train']
+
+print(f"Total number of images in the Stanford Dogs dataset: {len(train_dataset)}")
+
+# Define image processing parameters
+image_size = 256  # Size to resize images
+batch_size = 4  # Number of images in each batch
+
+# Define transformations to apply to each image
+preprocess = transforms.Compose(
+    [
+        transforms.Resize((image_size, image_size)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),  # Normalize for 3 channels (RGB)
+    ]
+)
+
+# Transformation function to be applied to each example in the dataset
+def transform(examples):
+    images = [preprocess(image.convert("RGB")) for image in examples["image"]]
+    return {"images": images}
+
+# Set transformation on the combined dataset
+train_dataset.set_transform(transform)
+
+# Create a DataLoader to load batches of images
+train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+# Display a batch of images
+print("Previewing batch:")
+batch = next(iter(train_dataloader))
+grid = torchvision.utils.make_grid(batch["images"], nrow=4)
+plt.imshow(grid.permute(1, 2, 0).cpu().clip(-1, 1) * 0.5 + 0.5)  # Convert back from normalized
+plt.axis('off')
+plt.show()
+```
+
+Some dog images of this dataset:
+<img src= images/Diff2GuidDiff/StanfordDogDataset.png>
+
+Now Lets start fine tuning!!!
+```
+num_epochs = 5  # @param
+lr = 5e-7  # 2param
+weight_decay = 1e-5
+grad_accumulation_steps = 4  # @param
+
+optimizer = torch.optim.AdamW(image_pipe.unet.parameters(), lr=lr, weight_decay=weight_decay)
+
+losses = []
+
+for epoch in range(num_epochs):
+    for step, batch in tqdm(enumerate(train_dataloader), total=len(train_dataloader)):
+        clean_images = batch["images"].to(device)
+        # Sample noise to add to the images
+        noise = torch.randn(clean_images.shape).to(clean_images.device)
+        bs = clean_images.shape[0]
+
+        # Sample a random timestep for each image
+        timesteps = torch.randint(
+            0,
+            image_pipe.scheduler.num_train_timesteps,
+            (bs,),
+            device=clean_images.device,
+        ).long()
+
+        # Add noise to the clean images according to the noise magnitude at each timestep
+        # (this is the forward diffusion process)
+        noisy_images = image_pipe.scheduler.add_noise(clean_images, noise, timesteps)
+
+        # Get the model prediction for the noise
+        noise_pred = image_pipe.unet(noisy_images, timesteps, return_dict=False)[0]
+
+        # Compare the prediction with the actual noise:
+        loss = F.mse_loss(
+            noise_pred, noise
+        )  # NB - trying to predict noise (eps) not (noisy_ims-clean_ims) or just (clean_ims)
+
+        # Store for later plotting
+        losses.append(loss.item())
+
+        # Update the model parameters with the optimizer based on this loss
+        loss.backward(loss)
+
+        # Gradient accumulation:
+        if (step + 1) % grad_accumulation_steps == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+
+    print(f"Epoch {epoch} average loss: {sum(losses[-len(train_dataloader):])/len(train_dataloader)}")
+
+# Plot the loss curve:
+plt.plot(losses)
+```
+
+This is really a large dataset! It took me 4 hours 40 minutes to finish fine-tuning on a single 2080Ti.
+
+Let's generate 8 images and see the results:
+```
+x = torch.randn(8, 3, 256, 256).to(device)  # Batch of 8
+for i, t in tqdm(enumerate(scheduler.timesteps)):
+    model_input = scheduler.scale_model_input(x, t)
+    with torch.no_grad():
+        noise_pred = image_pipe.unet(model_input, t)["sample"]
+    x = scheduler.step(noise_pred, t, x).prev_sample
+grid = torchvision.utils.make_grid(x, nrow=4)
+plt.imshow(grid.permute(1, 2, 0).cpu().clip(-1, 1) * 0.5 + 0.5)
+```
+
+<img src=images/Diff2GuidDiff/DogFineTonCatMpng.png >
+
+We succeed. The second picture shows a cat face on a dog body. The cat in picture 4 sits like a pug. This is really funny. Since I'm using a very small learning rate, maybe next time I should try a larger leaning rate.
+
+Now, save our own model!
+```
+image_pipe.save_pretrained("DogFT_on_Cat_Network.pth")
+```
+
+### Give the network some Guidance
+
+We had fun making a model to generate dog images from cat images generation model. Now, reload the model and give it some guidance.
+```
+image_pipe = DDPMPipeline.from_pretrained("google/ddpm-cat-256")
+image_pipe.to(device)
+```
+
+Firstly, try a very simple guidance, try to change the color style of the images.
+```
+def color_loss(images, target_color=(0.0, 0.0, 0.0)):
+    """Given a target color (R, G, B) return a loss for how far away on average
+    the images' pixels are from that color. Defaults to a light teal: (0.1, 0.9, 0.5)"""
+    target = torch.tensor(target_color).to(images.device) * 2 - 1  # Map target color to (-1, 1)
+    target = target[None, :, None, None]  # Get shape right to work with the images (b, c, h, w)
+    error = torch.abs(images - target).mean()  # Mean absolute difference between the image pixels and the target color
+    return error
+```
+
+

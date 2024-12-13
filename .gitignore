@@ -5,3 +5,4 @@ yolov8n.pt
 /stable_diffusion_finetuning
 *.pt
 generated_image.png
+*.DS_Store

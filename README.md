@@ -846,4 +846,73 @@ def color_loss(images, target_color=(0.0, 0.0, 0.0)):
     return error
 ```
 
+Inference method:
+```
+scheduler.set_timesteps(num_inference_steps=40)
+guidance_loss_scale = 40
+x = torch.randn(4, 3, 256, 256).to(device)
 
+for i, t in tqdm(enumerate(scheduler.timesteps)):
+
+    # Set requires_grad before the model forward pass
+    x = x.detach().requires_grad_()
+    model_input = scheduler.scale_model_input(x, t)
+
+    # predict (with grad this time)
+    noise_pred = image_pipe.unet(model_input, t)["sample"]
+
+    # Get the predicted x0:
+    x0 = scheduler.step(noise_pred, t, x).pred_original_sample
+
+    # Calculate loss
+    loss = color_loss(x0, target_color=(0.0, 0.0, 0.0)) * guidance_loss_scale
+    if i % 10 == 0:
+        print(i, "loss:", loss.item())
+
+    # Get gradient
+    cond_grad = -torch.autograd.grad(loss, x)[0]
+
+    # Modify x based on this gradient
+    x = x.detach() + cond_grad
+
+    # Now step with scheduler
+    x = scheduler.step(noise_pred, t, x).prev_sample
+
+
+grid = torchvision.utils.make_grid(x, nrow=4)
+im = grid.permute(1, 2, 0).cpu().clip(-1, 1) * 0.5 + 0.5
+# Image.fromarray(np.array(im * 255).astype(np.uint8))
+plt.imshow(im)
+plt.axis('off')  # Remove axis for a cleaner look
+plt.show()
+```
+
+#### Let's look at the code and see what happens in the guidance stage.
+
+In function ```def color_loss(images, target_color=(0.0, 0.0, 0.0))``` 
+1. This function receives 2 parameters. ```images``` is the images tensor in ```[Batch_size, C, H, W]``` order, then ```target_color``` is the desiered color in ```[R, G, B]``` order.
+2. Mapping the target color to the range (-1, 1). We map the color range to (-1, 1) because the diffusion model uses this range. This is common in UNet models. We use this range in the diffusion model because the center point is 0. This makes gradient mode effective and stable. The calculation method as following: 
+
+$$
+\text{target} = \text{target\_color} \times 2 - 1
+$$
+
+3. Reshaping the target to match the shape of input image tensor for futher loss calculation.
+4. Loss calculation. This step calculates the absolute difference between each pixel and the desired color. Then use the absolute mean as the global loss.
+
+#### Inference steps
+1. To demostrate the result, here I set the inference steps to 400 to make us can see the result faster since this is the color guidance.
+2. Set the guidance scale. This number represent the scale that how by much does ```color_loss``` effect the image generation.
+3. Set requires_grad ```x = x.detach().requires_grad_()```. This step means we need to calculate the gradient later respect to color loss.
+4. Use UNet in the diffusion model and predict the noise.
+5. Use the noise predicted by UNet to generate the denoised image.
+6. Calculate the loss based on the guidance scale.
+7. Compute and reverse the gradient. Since we want to move towards the target, so we want to minimize the loss, it is very samilar to gradian descent.
+8. Update ```x``` towards to the desiered direction.
+9. Step forward.
+
+By doing these steps, we can have a image in generally black. But we still can somehow see there is a cat im some of the results.
+
+<img src=images/Diff2GuidDiff/Black_Imgs.png >
+
+### Guidance using CLIP

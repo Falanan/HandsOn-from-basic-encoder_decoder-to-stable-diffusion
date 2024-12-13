@@ -19,12 +19,17 @@ Math is always boring, but let's look at the basics of the Diffusion Model first
 <img src= images/encoder-decoder/T-S.png>
 
 ### Training
+
 1. We are using a loop to add different amount of noize to your image
 2. x0 means the original image
 3. We are going to add the noise to the original image based on different timestep(T). For example, (1-100), We will start by adding only 1% noise all the way up to adding 100% noise. 100% noise means you will lose all your original data in your image.
 4. Sample a Gaussian distribution noise(e).
 5. What does (x_t = \sqrt{\alpha_t} \, x_0 + \sqrt{1 - \alpha_t} \,\epsilon) do? This function will do a weigited sum between original image(x0) and noise(e). By doing this, you can get a image with noise added.
-$$x_t = \sqrt{\alpha_t} \, x_0 + \sqrt{1 - \alpha_t} \, \epsilon$$
+
+$$
+x_t = \sqrt{\alpha_t} \, x_0 + \sqrt{1 - \alpha_t} \, \epsilon
+$$
+
 6. Keep doing the loop thll the end of the loop.
 
 <img src=images/encoder-decoder/x0t.png >
@@ -32,6 +37,7 @@ $$x_t = \sqrt{\alpha_t} \, x_0 + \sqrt{1 - \alpha_t} \, \epsilon$$
 Image from [Hung-Yi Lee: Machine Learning 2023 Spring](https://speech.ee.ntu.edu.tw/~hylee/ml/2023-spring.php)
 
 ### Sampling (Inferencing)
+
 1. Sample a Gaussian Distribution noise. This image is complete noised, at least from our human eyes, we can not tell if there is any objct.
 2. Run T iterations in total.
 3. The e in this equation means the predicted noise, xt means the image input from the previous step. In the equation, we are going to minus the predicted noise from the previous image. After that, as you can see ,we need to add z(New noise) to the image. Why do we need to add a new noise? We already predict the noise, isn't it great that we're predicting step by step like this? Actually NOT!!! In generative AI, we not always select the best result. If we keep choosing the best result, then the model will do some repetitive and useless work. Just like in LLM, if we keep choosing the token with the highest chance, the output of said LLM looks good though. But in reality it will just keep repeating the same point with nonsense. It's like getting stuck in a local optimal solution. So at each execution, we have to add some more bias. The new noise we added into the image is the bias.
@@ -41,7 +47,6 @@ Image from [Hung-Yi Lee: Machine Learning 2023 Spring](https://speech.ee.ntu.edu
 <img src =images/encoder-decoder/S_I.png >
 
 Image from [Hung-Yi Lee: Machine Learning 2023 Spring](https://speech.ee.ntu.edu.tw/~hylee/ml/2023-spring.php)
-
 
 Does this sound familiar? It seems like this is the architecture of the encoder and decoder! Still, they are slightly different. Let's start with the encoder-decoder architecture and expand to the Diffusion Model, and finally to the now very popular model: Stable Diffusion.
 
@@ -95,13 +100,13 @@ for result in results:
             bbox = box.xyxy[0].cpu().numpy()
             bbox = [int(coord) for coord in bbox]
             cropped_image = image_rgb[bbox[1]:bbox[3], bbox[0]:bbox[2]]
-            
+      
             # Display the cropped image using matplotlib
             plt.imshow(cropped_image)
             plt.axis('off')  # Hide axis
             plt.title("Cropped Person")
             plt.show()
-            
+      
             # Save the cropped image if needed
             cropped_image_path = "cropped_person.jpg"
             cropped_image_bgr = cv2.cvtColor(cropped_image, cv2.COLOR_RGB2BGR)  # Convert back to BGR for saving
@@ -109,19 +114,27 @@ for result in results:
             print(f"Cropped image saved at {cropped_image_path}")
 
 ```
+
 ### Let's see how does the picture looks like
+
 <img src=images/encoder-decoder/cropped_person.jpg  width="55%">
 
 As we already know, the processes of Diffusion model inference are adding noise and pridict how does the noise looks like for the next step. Then, how does the noize looks like? And, how can we add the noise to the image?
 
 ### Add Noise
+
 If we read the [Denoising Diffusion Probabilistic Models](https://arxiv.org/abs/2006.11239) paper. Then, you will see the following equation:
-$$ q(\mathbf{x}_t \mid \mathbf{x}_0) = \mathcal{N}(\mathbf{x}_t; \sqrt{\bar{\alpha}_t} \mathbf{x}_0, (1 - \bar{\alpha}_t) \mathbf{I})$$
+
+$$
+q(\mathbf{x}_t \mid \mathbf{x}_0) = \mathcal{N}(\mathbf{x}_t; \sqrt{\bar{\alpha}_t} \mathbf{x}_0, (1 - \bar{\alpha}_t) \mathbf{I})
+$$
+
 It looks CRAZY! But don't be panic. If we see this equation combined with this image:
 <img src=images/encoder-decoder/Diffusion_Model_Architechure.jpg  width="100%">
 Does it looks better? This equation basically saying we need to add different amout noise based on different time.
 
 For better understanding, let's start with a simpler version:
+
 ```
 def add_noise(x, amount):
     """Corrupt the input `x` by mixing it with noise according to `amount`"""
@@ -132,11 +145,15 @@ def add_noise(x, amount):
 ```
 
 This is the math equation representation:
-$$x_t = \sqrt{\alpha_t} \, x_0 + \sqrt{1 - \alpha_t} \, \epsilon
+
 $$
+x_t = \sqrt{\alpha_t} \, x_0 + \sqrt{1 - \alpha_t} \, \epsilon
+$$
+
 In this function, we firstly sample a Gaussian Distribution noise, then add the noise to the original image based on different amount.
 
 ### Add some noise to the image
+
 ```
 image_batch = torch.tensor([image_rgb for i in range(0,8)])
 image_batch = torch.tensor(image_batch, dtype=torch.float32) / 255.0
@@ -160,6 +177,7 @@ for i in range(0, 16):
 plt.show()
 
 ```
+
 Original image v.s. Noised image
 <img src=images/encoder-decoder/OrigvsNoised.png>
 As we can see from the picture, the noise gets progressively louder from left to right until you can't see what's in the picture at all.
@@ -179,6 +197,7 @@ def denoise(corrupted_x, amount, noise):
 This function directly removes the noise we added directly.
 
 ### Remove the noise partially
+
 ```
 updated_amount = torch.where(amount >= 0.2, amount - 0.2, amount)
 denoised_img = denoise(noised_img, updated_amount, noise)
@@ -199,6 +218,7 @@ for i in range(0, 24):
         plt.title("Denoised Image with amout" + str(round(updated_amount[i-16].item(), 2)), rotation=5)
         plt.axis('off')
 ```
+
 Original v.s. Noised v.s. Partially noise removed
 <img src=images/encoder-decoder/OriginalvsNoisedvsPartially.png >
 As we can see from the figure, if the drop noise is added completely when adding noise, which means ```amount = 1```. Then the photo will completely lose its original character. It would be impossible for us to restore the photo by simply subtracting the noise.
@@ -210,6 +230,7 @@ As we already touched MNIST and CIFAR10 dataset. I'll use these two dataset as e
 The MNIST (Modified National Institute of Standards and Technology) dataset is a large database of handwritten digits that is commonly used for training various image processing systems and machine learning models.
 
 #### Download the dataset and plot the images
+
 ```
 dataset = torchvision.datasets.MNIST(
     root="mnist/", train=True, download=True, transform=torchvision.transforms.ToTensor()
@@ -229,6 +250,7 @@ for i in range(batch_size):
     plt.axis('off')  # Optional: Turn off axis for cleaner display
 # plt.imshow(torchvision.utils.make_grid(x)[0], cmap="Greys")
 ```
+
 These are the images in MNIST dataset looks like:
 <img src=images/encoder-decoder/MNIST_imgs.png>
 
@@ -259,10 +281,13 @@ noised_x = add_noise(x, amount)
 axs[1].set_title("Noised data (-- amount increases -->)")
 axs[1].imshow(torchvision.utils.make_grid(noised_x)[0], cmap="Greys")
 ```
+
 <img src=images/encoder-decoder/MNIST_OrigvsNoised.png >
 
 ### UNet
+
 UNet(U-Shaped Network) is a type of convolutional neural network (CNN) designed for image-to-image tasks.
+
 1. Encoder Path: Extracts and compresses information, similar to a traditional convolutional network.
 2. Decoder Path: Reconstructs the image back to its original resolution, often using upsampling techniques.
 3. The "skip connections" directly link encoder layers to decoder layers. They ensure that fine details from earlier layers are available at higher resolution during upsampling.
@@ -294,13 +319,13 @@ class CustomizedUNet(nn.Module):
         )
         self.act = nn.SiLU()  # The activation function
         self.downscale = nn.MaxPool2d(2)
-        
+  
         # Use Upsample with align_corners=True
         self.upscale = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
 
     def forward(self, x):
         h = []  # Store skip connections
-        
+  
         # Down layers
         for i, l in enumerate(self.down_layers):
             x = self.act(l(x))  # Apply convolution + activation
@@ -322,6 +347,7 @@ class CustomizedUNet(nn.Module):
 ```
 
 Now Let's train this network!
+
 ```
 net = CustomizedUNet()
 x = torch.rand(8, 1, 28, 28)
@@ -438,6 +464,7 @@ for i in range(n_steps):
 As we can see in the picture. When there is a lot of noise, the result of multi-step denoising will be clearer than the single denoised image. At the same time, we lose some of the information of the image, which makes our results not look as accurate as single-step denoising. But that's what generative AI wants!
 
 ### Scale up to Diffusion model scheduler(DDPM UNet2DModel)
+
 ```
 model = UNet2DModel(
     sample_size=28,  # the target image resolution
@@ -460,6 +487,7 @@ model = UNet2DModel(
 ```
 
 As we increase the size of the network, training would takes more time, it is almost doubled.
+
 ```
 # Dataloader (you can mess with batch size)
 batch_size = 128
@@ -538,6 +566,7 @@ Now Let's see the result
 It seems much better than our BasicUNet, except the one with 100% noise added. We can have a way better result.
 
 Now Let's do the same thing. Remove noise partially in each step:
+
 ```
 n_steps = 50  # Increased to have more steps for 10-step history saving
 amount = torch.full((x.shape[0],), 0.8)
@@ -567,13 +596,19 @@ for i in range(n_rows):
     axs[i, 0].imshow(torchvision.utils.make_grid(step_history[i])[0].clip(0, 1), cmap="Greys")
     axs[i, 1].imshow(torchvision.utils.make_grid(pred_output_history[i])[0].clip(0, 1), cmap="Greys")
 ```
+
 <img src=images/encoder-decoder/MNIST_Unet2D_steps.png >
 
 It looks like the same as our defined BasicUnet. We lose some of the details, but the results are still pretty closed and we also can see there are While we can still discern the number, a new style has been created. This is what generative AI is all about.
 
-Finally, If we go back to the math equation: 
-$$x_t = \sqrt{\alpha_t} \, x_0 + \sqrt{1 - \alpha_t} \, \epsilon$$
+Finally, If we go back to the math equation:
+
+$$
+x_t = \sqrt{\alpha_t} \, x_0 + \sqrt{1 - \alpha_t} \, \epsilon
+$$
+
 If we plot the coefficients of the original image and noise.
+
 ```
 noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
 plt.plot(noise_scheduler.alphas_cumprod.cpu() ** 0.5, label=r"${\sqrt{\bar{\alpha}_t}}$")
@@ -590,12 +625,14 @@ We can clearly see that as the number of training steps increases, there is less
 #### Learning is very difficult, but cats save the day.
 
 ### Use pretrained diffusion model
+
 Let's use pretrained cat generation diffusion model to demostrate this part.
 
 ```
 image_pipe = DDPMPipeline.from_pretrained("google/ddpm-cat-256")
 image_pipe.to(device)
 ```
+
 Lets use pretrained cat generation Diffusion Model to generate 4 cat images.
 
 ```
@@ -618,7 +655,8 @@ for idx, image in enumerate(cat_image_list):
 plt.tight_layout()
 plt.show()
 ```
-Result: 
+
+Result:
 <img src=images/Diff2GuidDiff/1000steps.png >
 
 It seems the first 2 images are fine. Expecially the first image, we can see this model generated a very good cat image. But the last 2 images seems not soo good, anyway, we can still see there is a cat in the image.
@@ -679,7 +717,7 @@ Well, let's set the inference steps to 400 and observe the results during the in
 0 step(Initial step):
 <img src=images/Diff2GuidDiff/intermediate_0.png >
 
-100 steps: 
+100 steps:
 <img src=images/Diff2GuidDiff/intermediate_100.png >
 
 200 steps:
@@ -694,6 +732,7 @@ Well, let's set the inference steps to 400 and observe the results during the in
 The last image shows how adding random noise to an image affects the result of the inference. The 4th image in 100 steps shows a big cat face, but as the inference steps continue, the big cat face turns into the cat body.
 
 Now Lets switch back to default scheduler(DDPMScheduler) and try to fine tuning the network.
+
 ```
 scheduler = DDIMScheduler.from_pretrained("google/ddpm-cat-256")
 scheduler.set_timesteps(num_inference_steps=1000)
@@ -702,7 +741,8 @@ image_pipe.scheduler = scheduler
 
 I'm really excited to see if this network can be tuned to generate some dog images! Why not just give it a try? Here I'll fine-tune the cat generation diffusion model on [Stanford Dogs dataset](https://huggingface.co/datasets/Voxel51/StanfordDogs).
 
-Prepare the dataset: 
+Prepare the dataset:
+
 ```
 # Load the entire Stanford Dogs dataset (both train and test splits)
 dataset_name = "voxel51/stanford_dogs"
@@ -751,6 +791,7 @@ Some dog images of this dataset:
 <img src= images/Diff2GuidDiff/StanfordDogDataset.png>
 
 Now Lets start fine tuning!!!
+
 ```
 num_epochs = 5  # @param
 lr = 5e-7  # 2param
@@ -808,6 +849,7 @@ plt.plot(losses)
 This is really a large dataset! It took me 4 hours 40 minutes to finish fine-tuning on a single 2080Ti.
 
 Let's generate 8 images and see the results:
+
 ```
 x = torch.randn(8, 3, 256, 256).to(device)  # Batch of 8
 for i, t in tqdm(enumerate(scheduler.timesteps)):
@@ -824,6 +866,7 @@ plt.imshow(grid.permute(1, 2, 0).cpu().clip(-1, 1) * 0.5 + 0.5)
 We succeed. The second picture shows a cat face on a dog body. The cat in picture 4 sits like a pug. This is really funny. Since I'm using a very small learning rate, maybe next time I should try a larger leaning rate.
 
 Now, save our own model!
+
 ```
 image_pipe.save_pretrained("DogFT_on_Cat_Network.pth")
 ```
@@ -831,12 +874,14 @@ image_pipe.save_pretrained("DogFT_on_Cat_Network.pth")
 ### Give the network some Guidance
 
 We had fun making a model to generate dog images from cat images generation model. Now, reload the model and give it some guidance.
+
 ```
 image_pipe = DDPMPipeline.from_pretrained("google/ddpm-cat-256")
 image_pipe.to(device)
 ```
 
 Firstly, try a very simple guidance, try to change the color style of the images.
+
 ```
 def color_loss(images, target_color=(0.0, 0.0, 0.0)):
     """Given a target color (R, G, B) return a loss for how far away on average
@@ -848,6 +893,7 @@ def color_loss(images, target_color=(0.0, 0.0, 0.0)):
 ```
 
 Inference method:
+
 ```
 scheduler.set_timesteps(num_inference_steps=40)
 guidance_loss_scale = 40
@@ -890,9 +936,10 @@ plt.show()
 
 #### Let's look at the code and see what happens in the guidance stage.
 
-In function ```def color_loss(images, target_color=(0.0, 0.0, 0.0))``` 
+In function ```def color_loss(images, target_color=(0.0, 0.0, 0.0))```
+
 1. This function receives 2 parameters. ```images``` is the images tensor in ```[Batch_size, C, H, W]``` order, then ```target_color``` is the desiered color in ```[R, G, B]``` order.
-2. Mapping the target color to the range (-1, 1). We map the color range to (-1, 1) because the diffusion model uses this range. This is common in UNet models. We use this range in the diffusion model because the center point is 0. This makes gradient mode effective and stable. The calculation method as following: 
+2. Mapping the target color to the range (-1, 1). We map the color range to (-1, 1) because the diffusion model uses this range. This is common in UNet models. We use this range in the diffusion model because the center point is 0. This makes gradient mode effective and stable. The calculation method as following:
 
 $$
 \text{target} = \text{target\_color} \times 2 - 1
@@ -902,6 +949,7 @@ $$
 4. Loss calculation. This step calculates the absolute difference between each pixel and the desired color. Then use the absolute mean as the global loss.
 
 #### Inference steps
+
 1. To demostrate the result, here I set the inference steps to 400 to make us can see the result faster since this is the color guidance.
 2. Set the guidance scale. This number represent the scale that how by much does ```color_loss``` effect the image generation.
 3. Set requires_grad ```x = x.detach().requires_grad_()```. This step means we need to calculate the gradient later respect to color loss.
@@ -916,4 +964,145 @@ By doing these steps, we can have a image in generally black. But we still can s
 
 <img src=images/Diff2GuidDiff/Black_Imgs.png >
 
+This image is toooooooo dark, now lets downgrade the guidance scale. ```guidance_loss_scale = 30```
+
+<img src=images/Diff2GuidDiff/Black_Imgs_30_Scale.png >
+
+These images generated look better. There's a white cat on a black background, and a black cat too.
+
 ### Guidance using CLIP
+
+import CLIP model from OpenAI pretrained.
+
+```
+import open_clip
+
+clip_model, _, preprocess = open_clip.create_model_and_transforms("ViT-B-32", pretrained="openai")
+clip_model.to(device)
+
+# Transforms to resize and augment an image + normalize to match CLIP's training data
+tfms = torchvision.transforms.Compose(
+    [
+        torchvision.transforms.RandomResizedCrop(224),  # Random CROP each time
+        torchvision.transforms.RandomAffine(5),  # One possible random augmentation: skews the image
+        torchvision.transforms.RandomHorizontalFlip(),  # You can add additional augmentations if you like
+        torchvision.transforms.Normalize(
+            mean=(0.48145466, 0.4578275, 0.40821073),
+            std=(0.26862954, 0.26130258, 0.27577711),
+        ),
+    ]
+)
+
+
+# And define a loss function that takes an image, embeds it and compares with
+# the text features of the prompt
+def clip_loss(image, text_features):
+    image_features = clip_model.encode_image(tfms(image))  # Note: applies the above transforms
+    input_normed = torch.nn.functional.normalize(image_features.unsqueeze(1), dim=2)
+    embed_normed = torch.nn.functional.normalize(text_features.unsqueeze(0), dim=2)
+    dists = input_normed.sub(embed_normed).norm(dim=2).div(2).arcsin().pow(2).mul(2)  # Squared Great Circle Distance
+    return dists.mean()
+```
+
+How does the loss being calculated?
+
+1. Encode the image to image embedding representation for CLIP model.
+2. Encode the given texts.
+3. Normalization. Make both image embedding and text embedding to unit vector.
+4. Calculate the geodesic distance (Great-Circle Distance).
+
+What is geodesic distance (Great-Circle Distance)?
+
+DCD is the shortest distance between two points on the suface of a sephere. After embedding and normalization step, the data points are considered distributing on the surface of a high-dimentional sephere. So when calculating the loss, the curved geometry of the space need to be considered in. The following foemula can gives the GCD distance.
+
+$$
+d(\mathbf{x}, \mathbf{y}) = \arccos\left( \mathbf{x} \cdot \mathbf{y} \right)
+$$
+
+If you see the implementation, we are using `arcsin` instead of `arccos`, this is because when two data points are very close, then the result of `argcos` becomes very unstable and leading to a very large gradient, so we are using `arcsin` on the chordal distance avoids this. And the following equations are mathematically equivalent.
+
+$$
+\arccos(x) = 2 \cdot \arcsin\left(\sqrt{\frac{1 - x}{2}}\right)
+$$
+
+
+Inference steps:
+
+```
+# x0 = scheduler.step(noise_pred, t, x).pred_original_sample
+# This method not implemented on MPS devices on PyTorch 2.4.1, So only cpu available on MacBook
+if device == "mps":
+    device = "cpu"
+
+prompt = "A cat on the grass"
+
+# Explore changing this
+guidance_scale = 10
+n_cuts = 3
+
+# More steps -> more time for the guidance to have an effect
+scheduler.set_timesteps(1000)
+
+# We embed a prompt with CLIP as our target
+text = open_clip.xtokenize([prompt]).to(device)
+with torch.no_grad():
+    text_features = clip_model.encode_text(text)
+
+
+x = torch.randn(4, 3, 256, 256).to(device)  # RAM usage is high, you may want only 1 image at a time
+
+for i, t in tqdm(enumerate(scheduler.timesteps)):
+
+    model_input = scheduler.scale_model_input(x, t)
+
+    # predict the noise residual
+    with torch.no_grad():
+        noise_pred = image_pipe.unet(model_input, t)["sample"]
+
+    cond_grad = 0
+
+    for cut in range(n_cuts):
+
+        # Set requires grad on x
+        x = x.detach().requires_grad_()
+
+        # Get the predicted x0:
+        x0 = scheduler.step(noise_pred, t, x).pred_original_sample
+
+        # Calculate loss
+        loss = clip_loss(x0, text_features) * guidance_scale
+
+        # Get gradient (scale by n_cuts since we want the average)
+        cond_grad -= torch.autograd.grad(loss, x)[0] / n_cuts
+
+    if i % 100 == 0:
+        print("Step:", i, ", Guidance loss:", loss.item())
+
+    # Modify x based on this gradient
+    alpha_bar = scheduler.alphas_cumprod[i]
+    x = x.detach() + cond_grad * alpha_bar.sqrt()  # Note the additional scaling factor here!
+
+    # Now step with scheduler
+    x = scheduler.step(noise_pred, t, x).prev_sample
+
+
+grid = torchvision.utils.make_grid(x.detach(), nrow=4)
+im = grid.permute(1, 2, 0).cpu().clip(-1, 1) * 0.5 + 0.5
+# Image.fromarray(np.array(im * 255).astype(np.uint8))
+plt.imshow(im)
+plt.axis('off')  # Remove axis for a cleaner look
+plt.show()
+```
+
+Here are human understandable texts for inference steps:
+
+1. Define parameters: ```prompt, guidance_scale, n_cuts```. ```Prompt``` is the text that how do we want to guide the diffusion model to generate. ```Guidance_scale``` is by how much does the images looks like the expected output. ```n_cuts``` can guide how does CLIP model cut the image. I'll go into this parameter later.
+2. Get the noise predicted by UNet model.
+3. CLIP Guidance:
+   * Get `x0`, which are the clean images predicted by using the current predicted noise.
+   * Calculate CLIP loss
+   * Compute and update the gradient to make the image generate moves towards the direction that we want.
+4. Make the scheduler takes another step in the reverse diffusion process, further removing noise from the image.
+
+<img src=images/Diff2GuidDiff/CatOnGrass.png >
+Since here I'm using a baby model, I believe the results are quite good.

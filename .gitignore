@@ -6,3 +6,4 @@ yolov8n.pt
 *.pt
 generated_image.png
 *.DS_Store
+/Diffusion_Course

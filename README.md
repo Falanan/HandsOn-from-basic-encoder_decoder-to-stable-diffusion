@@ -4,6 +4,8 @@ In this document, I'm going to expand step by step from the basic Encoder-Decode
 
 The trajectory of learning should be from easy to hard, from shallow to deep. That's why I've divided this notebook into multiple sections. I think the math is the toughest part when it comes to learning the various models. Math is too abstract and not like code that you can read and execute to clearly show what you have done at each step. So I'll be interspersing architectural diagrams and mathematical implementations of the models with coffee breaks where I execute the code and wait for the results, which should make it a little more motivating for people like me who don't like math to learn it.
 
+Very thanks to [Hugging Face Diffusion Course](https://huggingface.co/learn/diffusion-course/en/), and many of the code of in this project are modified based on this course.
+
 ## 1. Introduction: What is Diffusion Model?
 
 Generative Model As the name suggests, this model generates a photo that doesn't exist in reality, a photo that looks like it came from the void. But after you generate this picture, this picture comes into the world. It's kind of like quantum mechanics, where the quantum is in a quantum superposition state when it's not being observed, and when it's being observed it collapses into the state it was in when it was observed.

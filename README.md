@@ -1109,15 +1109,101 @@ And the following image is about the predection to the content in the image from
 
 <img src=images/Diff2GuidDiff/CLIP_Prediction.png >
 
+## Stable Diffusion
+
+Stable Diffusion model is now the most popular open-sourced image generation model. And the model has may piplines such as `Text-to-Image`, `Image-to-Image`, `depth-to-image`. Since I'm running out of time when reaching this section. So I'll demostrate simple text to image pipline only and update rest parts later.
+
+Import essential modules
+```
+import torch
+import requests
+from io import BytesIO
+from matplotlib import pyplot as plt
+import cv2
+import os
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torchvision import transforms
+from transformers import CLIPTokenizer
+from PIL import Image
+import glob
+
+# We'll be exploring a number of pipelines today!
+from diffusers import (
+    StableDiffusionPipeline,
+    StableDiffusion3Pipeline,
+    StableDiffusionImg2ImgPipeline,
+    StableDiffusionInpaintPipeline,
+    StableDiffusionDepth2ImgPipeline,
+)
+
+
+device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+print(f"Using device: {device}")
+```
+
+Load model:
+```
+model_id = "stabilityai/stable-diffusion-2-1-base"
+pipe = StableDiffusionPipeline.from_pretrained(model_id).to(device)
+```
+
+Try some images generation:
+
+Here I want to generate `a colorful oil print image of a man walking in New York city`.
+
+```
+pipe_output = pipe(
+    prompt= "A colorful oil print image of A man walking in New York city",
+    negative_prompt="Undersaturated, low quality",  # What NOT to generate
+    height=480,
+    width=640,  # Specify the image size
+    guidance_scale=8,  # How strongly to follow the prompt
+    num_inference_steps=400,  # How many steps to take
+    # generator=generator,  # Fixed random seed
+)
+
+# View the resulting image
+pipe_output.images[0]
+```
+Image generated:
+
+<img src=images/StableDiffusion/oil_print_man_newyork.png >
+
+Stable diffusion model is train on [LAION](https://laion.ai/blog/laion-400-open-dataset/) dataset. This is a open sourced dataset of Image-Text pairs. During the training, the model takes the text description of the image and tuning the CLIP and Diffusion pipline together. This is the reason why diffusion model requires a text prompt to guide the model.
+
+Stable Diffusion model contains these components: CLIP, VAE Encoder, UNet, VAE Decoder. We have already played with CLIP and UNet, also we know what do they do during the image generation. So, What does the VAE(Variational Autoencoder) do in stable diffusion model?
+
+In stable diffusion models, developer introduced VAE to reduce the computation cost. Instead of using high dimentional data such as 512 * 512 * 3 pixel images, stable diffusion use VAE Encoder to compress the original image to a smaller latent space such as 64 * 64 * 3, then training UNet on the smaller latent space. Finally, use the VAE Decoder to convert the latent space to high dimentional pixel data. By doing this can save many computational resources.
+
+During the training stage, both VAE and CLIP need to be freezed, and only UNet need to be tuned.
+
 ## Classifier Based Guidance v.s. Classifier Free Guidance. Pros, Cons & Challenges
 
 I believe that by this point we understand the Diffusion model, so it's time to talk about the Classifier Based Guidance and Classifier Free Guidance.
 
-### What are the differences between these two?
-Classifier Free Diffusion Models don't need an external model, which is classifier to steer the diffusion model's output toward a certain class. All above examples are Classifier free diffusion model. As you can see, the pretrained cat generation model can generate cat images without any guidance. This is because Classifier free model already involves incorporating conditioning information (like class labels) directly into the diffusion model itself so that it can generate images of a specific class without needing a separate classifier.
+### What are the differences between these two models?
+Classifier Free Diffusion Models don't need an external model, which is classifier to steer the diffusion model's output toward a certain class. All above models are all Classifier free diffusion models. You may wonder I see you introduced CLIP model to your cat generation model, also the stable diffusion require a text promot to guide the model generate the image. Why are you saying above all are classifier free models? Well, let's take a look.
 
-During training, the model is exposed to pairs of (input, condition). For example, in a text-to-image scenario, the condition is a text prompt. In a class-conditional scenario, the condition would be a class label.
+As you can see, the pretrained cat generation model can generate cat images without any guidance. This is because this model is being trained on a biased dataset, this dataset contains cat images only, and the model doesn't even need to know what a cat is to generate a picture of a cat. This model even can not be call as a classifier free model, since there is no text introduced during the training step. But at the time when I introduced the color guidance and CLIP guidance, and we use the gradient to guide the generation direction, now this model becomes classifier based model.
 
-Some fraction of the time, the condition is intentionally replaced with a “null” or empty condition (like an empty string for text or a special null token for a class label). This trains the model to also produce outputs without any conditioning.
+Stable diffusion do have a classifier builded-in, but why this model is also classifier free? This is because during the training steps, the CLIP model is freezed, which means we don't touch the parameters in CLIP model, and CLIP model only generate the token, and the model do need the token as a input to train the diffusion part.
 
-Text-to-Image Stable diffusion is a very typical Classifier Free model.
+Now the reason becomes very clear. The classifier free diffusion model don't tuning the classifier during the training steps and the result of classifier need to participate in the training od the Diffusion network, while classifier based diffusion need to tuning the parameters in the classifier, but the output of the classifier does not participate in the training of the Diffusion network.
+
+#### How do classifier free diffusion models trained?
+
+Remember! The classifier free diffusion model DO NOT tuning the parameter during the training steps. So, if we introduce the CLIP model during the training steps, during training, the model is exposed to pairs of (input, condition). For example, in a text-to-image scenario, the condition is a text prompt. In a class-conditional scenario, the condition would be a class label.Some fraction of the time, the condition is intentionally replaced with a “null” or empty condition (like an empty string for text or a special null token for a class label). For example, 90% the training data are text-image pairs, and 10% data are pairs of empty label and image. This trains the model to also produce outputs without any conditions. Again, this is the beginning of the ZERO-SHOT model.
+
+#### How do classifier based diffusion models trained?
+During training, the parameters of both models need to be tuned. However, these two models are not trained together, but separately.
+
+1. Classifier: In classifier based diffusion model, the classifier don't need to be CLIP, it can be CNN or ResNet. And use the gradient to modify the denoising process and guide the model to generate images toward the expected result. In this case, the classifier is task-specific and trained for the diffusion model. This model takes a noised image and time step, the try to predict the category in the image.
+2. Diffusion part: Same training method as classifier free models, just like the examples showed all above.
+
+### Pros and Cons
+For classifier based models, We can change the classifier to what we want at any time. Just like the I introduced the color guidance and CLIP guidance. Such a model gives us more than ample flexibility. At the same time, because in the training process, we because we need to train two parts, which undoubtedly adds a lot of training steps and calculations. At the same time, because the classifier and diffusion model are trained separately, so it doesn't work too well when using a classifier to guide the direction of diffusion model.
+
+For classidier free models, Although we do not adjust the classifier during the training process, the output of the classifier is involved in the training, which will make the generated results more accurate and better. At the same time, because the classifier is builded-in, so we can't use our own classifiers.

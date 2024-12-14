@@ -1205,7 +1205,18 @@ During training, the parameters of both models need to be tuned. However, these 
 1. Classifier: In classifier based diffusion model, the classifier don't need to be CLIP, it can be CNN or ResNet. And use the gradient to modify the denoising process and guide the model to generate images toward the expected result. In this case, the classifier is task-specific and trained for the diffusion model. This model takes a noised image and time step, the try to predict the category in the image.
 2. Diffusion part: Same training method as classifier free models, just like the examples showed all above.
 
-### Pros and Cons
-For classifier based models, We can change the classifier to what we want at any time. Just like the I introduced the color guidance and CLIP guidance. Such a model gives us more than ample flexibility. At the same time, because in the training process, we because we need to train two parts, which undoubtedly adds a lot of training steps and calculations. At the same time, because the classifier and diffusion model are trained separately, so it doesn't work too well when using a classifier to guide the direction of diffusion model.
+### Pros, Cons and challenges
 
-For classidier free models, Although we do not adjust the classifier during the training process, the output of the classifier is involved in the training, which will make the generated results more accurate and better. At the same time, because the classifier is builded-in, so we can't use our own classifiers.
+#### Classifier based diffusion models
+
+1. We can change the classifier to what we want at any time. Just like the I introduced the color guidance and CLIP guidance. Such a model gives us more than ample flexibility. 
+2. Because in the training process, we because we need to train two parts, which undoubtedly adds a lot of training steps and calculations. 
+3. Because the classifier and diffusion model are trained separately, so it doesn't work too well when using a classifier to guide the direction of diffusion model.
+4. During the inference steps, gradient need to be calculated everytime. This can lead to a significant increase in computational overhead.
+
+#### Classidier free diffusion models
+
+1. We do not adjust the classifier during the training process, the output of the classifier is involved in the training, which will make the generated results more accurate and better. At the same time, because the classifier is builded-in, so we can't use our own classifiers.
+2. During the training steps, the model need to deal with both labeled images and non-labled images, this introduced challanges to control the generated images quality of no referenced texts.
+3. Depends on the quality of pretrained classifier such as CLIP. It has been shown in many studies that the quality of the text encoder directly affects the quality of the generated content. Since during the training steps, diffusion model need to use the output of the text encoder. So, If we want to replace the text encoder, then we need to train the model totally from the very begining.
+4. During the inference steps, since most of the model use Transformer and attention mechanism, this does not require the gradient to be computed at every step of the way. So the computational cost will be reduced. But attention mechanism may can't deal with long text so well.
